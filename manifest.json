@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "templates": [
+    {
+      "id": "bc-modern",
+      "name": "Modern Vizitka",
+      "productType": "business_card",
+      "size": { "width": 90, "height": 50, "unit": "mm" },
+      "tags": ["modern", "minimal", "dark"],
+      "preview": "https://raw.githubusercontent.com/USERNAME/print-design-templates/main/previews/bc-modern.png",
+      "templateUrl": "https://raw.githubusercontent.com/USERNAME/print-design-templates/main/templates/bc-modern.json"
+    }
+  ]
+}
