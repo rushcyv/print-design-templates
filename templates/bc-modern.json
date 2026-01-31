@@ -1,0 +1,16 @@
+{
+  "canvas": { "width": 90, "height": 50, "unit": "mm", "bleed": 3 },
+  "fields": [
+    { "key": "fullName", "label": "Ad Soyad", "required": true },
+    { "key": "phone", "label": "Telefon", "required": true },
+    { "key": "email", "label": "Email" },
+    { "key": "qrLink", "label": "QR Link", "type": "qr" }
+  ],
+  "layers": [
+    { "type": "rect", "x": 0, "y": 0, "width": "100%", "height": "100%", "fill": "#111111" },
+    { "type": "text", "field": "fullName", "x": 10, "y": 12, "fontSize": 10, "color": "#ffffff", "fontWeight": "bold" },
+    { "type": "text", "field": "phone", "x": 10, "y": 28, "fontSize": 8, "color": "#cccccc" },
+    { "type": "text", "field": "email", "x": 10, "y": 38, "fontSize": 8, "color": "#cccccc" },
+    { "type": "qr", "field": "qrLink", "x": 65, "y": 12, "size": 20 }
+  ]
+}
