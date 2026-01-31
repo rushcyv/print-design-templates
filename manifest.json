@@ -7,8 +7,8 @@
       "productType": "business_card",
       "size": { "width": 90, "height": 50, "unit": "mm" },
       "tags": ["modern", "minimal", "dark"],
-      "preview": "https://raw.githubusercontent.com/USERNAME/print-design-templates/main/previews/bc-modern.png",
-      "templateUrl": "https://raw.githubusercontent.com/USERNAME/print-design-templates/main/templates/bc-modern.json"
+      "preview": "https://raw.githubusercontent.com/rushcyv/print-design-templates/main/previews/bc-modern.png",
+      "templateUrl": "https://raw.githubusercontent.com/rushcyv/print-design-templates/main/templates/bc-modern.json"
     }
   ]
 }
