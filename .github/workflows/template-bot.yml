@@ -2,6 +2,9 @@ name: Template Bot (AI Drafts)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+
     inputs:
       count_each:
         description: "How many drafts per product type"
