@@ -12,22 +12,32 @@ on:
         required: true
         default: "3"
 
-# IMPORTANT: allow workflow to push commits
-permissions:
-  contents: write
-
 jobs:
   generate:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (no credentials)
         uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Debug (branch/actor)
+        run: |
+          echo "actor=${{ github.actor }}"
+          echo "ref_name=${{ github.ref_name }}"
+          echo "repository=${{ github.repository }}"
+
+      - name: Ensure REPO_PAT secret exists
+        env:
+          REPO_PAT: ${{ secrets.REPO_PAT }}
+        run: |
+          if [ -z "$REPO_PAT" ]; then
+            echo "ERROR: REPO_PAT secret is EMPTY or not доступен."
+            exit 1
+          fi
+          echo "REPO_PAT is present."
 
       - name: Generate draft placeholder files
         env:
@@ -51,10 +61,18 @@ jobs:
           }
           EOF
 
-      - name: Commit drafts
+      - name: Commit & push with PAT
+        env:
+          REPO_PAT: ${{ secrets.REPO_PAT }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+          git config user.name "template-bot"
+          git config user.email "bot@templates.ai"
+
           git add drafts
           git commit -m "add draft templates" || echo "nothing to commit"
-          git push
+
+          # Force origin to use PAT (NOT github-actions[bot])
+          git remote set-url origin https://x-access-token:${REPO_PAT}@github.com/${{ github.repository }}.git
+
+          # Push to the same branch that triggered the workflow
+          git push origin HEAD:${{ github.ref_name }}
