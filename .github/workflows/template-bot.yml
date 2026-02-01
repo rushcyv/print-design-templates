@@ -80,13 +80,14 @@ jobs:
             } catch {}
           }
 
-          const PRODUCTS = [
-            { type: "business_card", size: "1024x1024" },
-            { type: "flyer", size: "1024x1792" },
-            { type: "rollup", size: "1024x1792" },
-            { type: "booklet", size: "1024x1792" },
-            { type: "poster", size: "1024x1792" }
-          ];
+     const PRODUCTS = [
+  { type: "business_card", size: "1024x1024" },   // square
+  { type: "flyer",        size: "1024x1536" },   // portrait
+  { type: "rollup",       size: "1024x1536" },   // portrait
+  { type: "booklet",      size: "1024x1536" },   // portrait
+  { type: "poster",       size: "1024x1536" }    // portrait
+];
+
 
           async function generateImage(prompt, size) {
             const res = await fetch("https://api.openai.com/v1/images/generations", {
