@@ -8,62 +8,53 @@ on:
         required: true
         default: "business_card"
       count:
-        description: "How many templates to generate"
+        description: "How many drafts to generate"
         required: true
-        default: "5"
+        default: "3"
+
+# IMPORTANT: allow workflow to push commits
+permissions:
+  contents: write
 
 jobs:
   generate:
     runs-on: ubuntu-latest
 
     steps:
-  - name: Checkout repo
-  uses: actions/checkout@v4
-  with:
-    persist-credentials: false
-
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install deps
-        run: npm install openai axios
-
-      - name: Generate drafts with OpenAI
+      - name: Generate draft placeholder files
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          REPO_PAT: ${{ secrets.REPO_PAT }}
+          INPUT_PRODUCT: ${{ github.event.inputs.product }}
+          INPUT_COUNT: ${{ github.event.inputs.count }}
         run: |
           node <<'EOF'
           const fs = require("fs");
-          const axios = require("axios");
 
           const product = process.env.INPUT_PRODUCT || "business_card";
-          const count = parseInt(process.env.INPUT_COUNT || "5", 10);
+          const count = parseInt(process.env.INPUT_COUNT || "3", 10);
 
-          const draftsDir = "drafts/previews";
-          if (!fs.existsSync(draftsDir)) fs.mkdirSync(draftsDir, { recursive: true });
+          const dir = "drafts/previews";
+          fs.mkdirSync(dir, { recursive: true });
 
           for (let i = 0; i < count; i++) {
-            const id = `${product}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-            const filePath = `${draftsDir}/${id}.txt`;
-
-            fs.writeFileSync(
-              filePath,
-              `DRAFT PLACEHOLDER\nproduct=${product}\nid=${id}\n`
-            );
-            console.log("Draft created:", filePath);
+            const id = `${product}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const filePath = `${dir}/${id}.txt`;
+            fs.writeFileSync(filePath, `DRAFT PLACEHOLDER\nproduct=${product}\nid=${id}\n`);
+            console.log("Created:", filePath);
           }
           EOF
 
-- name: Commit drafts
-  run: |
-    git config user.name "github-actions"
-    git config user.email "actions@github.com"
-    git add drafts
-    git commit -m "add draft templates" || echo "nothing to commit"
-    git push
-
-
+      - name: Commit drafts
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add drafts
+          git commit -m "add draft templates" || echo "nothing to commit"
+          git push
