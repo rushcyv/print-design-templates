@@ -132,7 +132,7 @@ jobs:
             return base.join(" ");
           }
 
-      async function openaiGeneratePng({ prompt, size }) {
+     async function openaiGeneratePng({ prompt, size }) {
   const resp = await fetch("https://api.openai.com/v1/images/generations", {
     method: "POST",
     headers: {
@@ -145,6 +145,7 @@ jobs:
       size
     })
   });
+
 
 
             if (!resp.ok) {
