@@ -1,0 +1,64 @@
+name: Template Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Product type (business_card, rollup, booklet)"
+        required: true
+        default: "business_card"
+      count:
+        description: "How many templates to generate"
+        required: true
+        default: "5"
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install deps
+        run: npm install openai axios
+
+      - name: Generate drafts with OpenAI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REPO_PAT: ${{ secrets.REPO_PAT }}
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+          const axios = require("axios");
+
+          const product = process.env.INPUT_PRODUCT || "business_card";
+          const count = parseInt(process.env.INPUT_COUNT || "5", 10);
+
+          const draftsDir = "drafts/previews";
+          if (!fs.existsSync(draftsDir)) fs.mkdirSync(draftsDir, { recursive: true });
+
+          for (let i = 0; i < count; i++) {
+            const id = `${product}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+            const filePath = `${draftsDir}/${id}.txt`;
+
+            fs.writeFileSync(
+              filePath,
+              `DRAFT PLACEHOLDER\nproduct=${product}\nid=${id}\n`
+            );
+            console.log("Draft created:", filePath);
+          }
+          EOF
+
+      - name: Commit drafts
+        run: |
+          git config user.name "template-bot"
+          git config user.email "bot@templates.ai"
+          git add drafts
+          git commit -m "add draft templates"
+          git push https://x-access-token:${{ secrets.REPO_PAT }}@github.com/rushcyv/print-design-templates.git
