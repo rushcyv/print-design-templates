@@ -17,8 +17,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+   - name: Checkout repo
+  uses: actions/checkout@v4
+  with:
+    token: ${{ secrets.REPO_PAT }}
+
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -61,4 +64,4 @@ jobs:
           git config user.email "bot@templates.ai"
           git add drafts
           git commit -m "add draft templates"
-          git push https://x-access-token:${{ secrets.REPO_PAT }}@github.com/rushcyv/print-design-templates.git
+          git push
