@@ -132,22 +132,20 @@ jobs:
             return base.join(" ");
           }
 
-          async function openaiGeneratePng({ prompt, size }) {
-            // Using Images API (common format). If your account requires a different endpoint/model,
-            // we can adjust after first run.
-            const resp = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${OPENAI_API_KEY}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                model: "gpt-image-1",
-                prompt,
-                size,
-                response_format: "b64_json"
-              })
-            });
+      async function openaiGeneratePng({ prompt, size }) {
+  const resp = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-image-1",
+      prompt,
+      size
+    })
+  });
+
 
             if (!resp.ok) {
               const text = await resp.text();
