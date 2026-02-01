@@ -1,16 +1,24 @@
-name: Template Bot
+name: Template Bot (AI Drafts)
 
 on:
   workflow_dispatch:
     inputs:
-      product:
-        description: "Product type (business_card, rollup, booklet)"
+      count_each:
+        description: "How many drafts per product type"
         required: true
-        default: "business_card"
-      count:
-        description: "How many drafts to generate"
+        default: "2"
+      style:
+        description: "Style preset (minimal, luxury, modern, playful, corporate)"
         required: true
-        default: "3"
+        default: "minimal"
+      color:
+        description: "Color preset (dark, light, red, blue, green, pastel)"
+        required: true
+        default: "dark"
+      industry:
+        description: "Industry tag (restaurant, hotel, beauty, construction, general)"
+        required: true
+        default: "general"
 
 jobs:
   generate:
@@ -23,42 +31,289 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Debug (branch/actor)
-        run: |
-          echo "actor=${{ github.actor }}"
-          echo "ref_name=${{ github.ref_name }}"
-          echo "repository=${{ github.repository }}"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - name: Ensure REPO_PAT secret exists
+      - name: Generate AI drafts (PNG + JSON + drafts manifest)
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           REPO_PAT: ${{ secrets.REPO_PAT }}
-        run: |
-          if [ -z "$REPO_PAT" ]; then
-            echo "ERROR: REPO_PAT secret is EMPTY or not доступен."
-            exit 1
-          fi
-          echo "REPO_PAT is present."
-
-      - name: Generate draft placeholder files
-        env:
-          INPUT_PRODUCT: ${{ github.event.inputs.product }}
-          INPUT_COUNT: ${{ github.event.inputs.count }}
+          COUNT_EACH: ${{ github.event.inputs.count_each }}
+          STYLE: ${{ github.event.inputs.style }}
+          COLOR: ${{ github.event.inputs.color }}
+          INDUSTRY: ${{ github.event.inputs.industry }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           node <<'EOF'
           const fs = require("fs");
+          const path = require("path");
 
-          const product = process.env.INPUT_PRODUCT || "business_card";
-          const count = parseInt(process.env.INPUT_COUNT || "3", 10);
-
-          const dir = "drafts/previews";
-          fs.mkdirSync(dir, { recursive: true });
-
-          for (let i = 0; i < count; i++) {
-            const id = `${product}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            const filePath = `${dir}/${id}.txt`;
-            fs.writeFileSync(filePath, `DRAFT PLACEHOLDER\nproduct=${product}\nid=${id}\n`);
-            console.log("Created:", filePath);
+          const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+          if (!OPENAI_API_KEY) {
+            console.error("OPENAI_API_KEY missing");
+            process.exit(1);
           }
+
+          const COUNT_EACH = parseInt(process.env.COUNT_EACH || "2", 10);
+          const STYLE = process.env.STYLE || "minimal";
+          const COLOR = process.env.COLOR || "dark";
+          const INDUSTRY = process.env.INDUSTRY || "general";
+
+          const OWNER = process.env.OWNER;
+          const REPO = process.env.REPO;
+          const BRANCH = process.env.BRANCH;
+
+          const RAW_BASE = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}`;
+
+          // Draft folders
+          const PREV_DIR = "drafts/previews";
+          const TPL_DIR = "drafts/templates";
+          fs.mkdirSync(PREV_DIR, { recursive: true });
+          fs.mkdirSync(TPL_DIR, { recursive: true });
+
+          // Load or init drafts manifest
+          const draftsManifestPath = "drafts/manifest.json";
+          let draftsManifest = { version: "1.0", updatedAt: new Date().toISOString(), templates: [] };
+          if (fs.existsSync(draftsManifestPath)) {
+            try {
+              draftsManifest = JSON.parse(fs.readFileSync(draftsManifestPath, "utf8"));
+              if (!draftsManifest.templates) draftsManifest.templates = [];
+            } catch {
+              // keep default
+            }
+          }
+
+          // Product specs: sizes are for PRINT metadata, image size is for AI output
+          const PRODUCTS = [
+            { productType: "business_card", name: "AI Business Card", sizeMm: { w: 90, h: 50 }, imageSize: "1024x1024" },
+            { productType: "flyer",        name: "AI Flyer",         sizeMm: { w: 148, h: 210 }, imageSize: "1024x1792" },
+            { productType: "rollup",       name: "AI Rollup",        sizeCm: { w: 85, h: 200 }, imageSize: "1024x1792" },
+            { productType: "booklet",      name: "AI Booklet Cover", sizeMm: { w: 148, h: 210 }, imageSize: "1024x1792" },
+            { productType: "poster",       name: "AI Poster",        sizeMm: { w: 297, h: 420 }, imageSize: "1024x1792" },
+          ];
+
+          function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+          function makeId(productType) {
+            const rand = Math.random().toString(36).slice(2, 8);
+            const ts = Date.now();
+            return `${productType}-${ts}-${rand}`;
+          }
+
+          function promptFor(productType) {
+            // IMPORTANT: background only; no readable text, no logos.
+            // We leave negative space for overlay fields in the app.
+            const base = [
+              `Create a print-friendly ${productType} background design.`,
+              `Style: ${STYLE}. Color mood: ${COLOR}. Industry theme: ${INDUSTRY}.`,
+              `Minimal, clean shapes, subtle gradients, modern composition.`,
+              `NO readable text, NO letters, NO numbers, NO brand logos, NO trademarks.`,
+              `Leave clear negative space for overlay text and a QR code (safe areas).`,
+              `High contrast and professional.`
+            ];
+
+            // product-specific layout hints
+            if (productType === "business_card") {
+              base.push("Layout hint: keep left side cleaner for name/contact; right side can have a visual block for QR.");
+            } else if (productType === "rollup") {
+              base.push("Layout hint: keep top area clean for a headline; bottom-right area clean for QR and contacts.");
+            } else if (productType === "flyer") {
+              base.push("Layout hint: keep top for headline and center for offer; bottom-right clean for QR.");
+            } else if (productType === "booklet") {
+              base.push("Layout hint: keep center/top clean for title; bottom clean for website/QR.");
+            } else if (productType === "poster") {
+              base.push("Layout hint: strong visual center; leave bottom strip clean for details and QR.");
+            }
+
+            return base.join(" ");
+          }
+
+          async function openaiGeneratePng({ prompt, size }) {
+            // Using Images API (common format). If your account requires a different endpoint/model,
+            // we can adjust after first run.
+            const resp = await fetch("https://api.openai.com/v1/images/generations", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${OPENAI_API_KEY}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                model: "gpt-image-1",
+                prompt,
+                size,
+                response_format: "b64_json"
+              })
+            });
+
+            if (!resp.ok) {
+              const text = await resp.text();
+              throw new Error(`OpenAI error ${resp.status}: ${text}`);
+            }
+
+            const data = await resp.json();
+            const b64 = data?.data?.[0]?.b64_json;
+            if (!b64) throw new Error("No b64_json returned from OpenAI");
+            return Buffer.from(b64, "base64");
+          }
+
+          function buildDraftTemplateJson(productType, bgRawUrl, meta) {
+            // Minimal robust strategy: background image + editable overlays (preset positions).
+            // App can render with Konva; PDF export uses this spec.
+            let canvas;
+            if (meta.sizeMm) canvas = { width: meta.sizeMm.w, height: meta.sizeMm.h, unit: "mm", bleed: 3 };
+            if (meta.sizeCm) canvas = { width: meta.sizeCm.w, height: meta.sizeCm.h, unit: "cm", bleed: 0.3 };
+
+            const commonFields = [{ key: "qrLink", label: "QR Link", type: "qr" }];
+
+            let fields = [];
+            let layers = [
+              { type: "image", role: "background", src: bgRawUrl, x: 0, y: 0, width: "100%", height: "100%" }
+            ];
+
+            // Preset overlays by type (coordinates are approximate; user can refine later in editor)
+            if (productType === "business_card") {
+              fields = [
+                { key: "fullName", label: "Ad Soyad", required: true },
+                { key: "jobTitle", label: "Vəzifə" },
+                { key: "phone", label: "Telefon" },
+                { key: "email", label: "Email" },
+                { key: "website", label: "Website" },
+                ...commonFields
+              ];
+              layers.push(
+                { type: "text", field: "fullName", x: 10, y: 12, fontSize: 10, color: "#ffffff", fontWeight: "bold" },
+                { type: "text", field: "phone",   x: 10, y: 28, fontSize: 8,  color: "#e0e0e0" },
+                { type: "text", field: "email",   x: 10, y: 38, fontSize: 8,  color: "#e0e0e0" },
+                { type: "qr",   field: "qrLink",  x: 65, y: 12, size: 20 }
+              );
+            } else if (productType === "rollup") {
+              fields = [
+                { key: "headline", label: "Başlıq", required: true },
+                { key: "subheadline", label: "Alt başlıq" },
+                { key: "phone", label: "Telefon" },
+                { key: "instagram", label: "Instagram" },
+                ...commonFields
+              ];
+              layers.push(
+                { type: "text", field: "headline",    x: 8,  y: 10, fontSize: 26, color: "#ffffff", fontWeight: "bold" },
+                { type: "text", field: "subheadline", x: 8,  y: 22, fontSize: 14, color: "#f0f0f0" },
+                { type: "text", field: "phone",       x: 8,  y: 180, fontSize: 10, color: "#ffffff" },
+                { type: "qr",   field: "qrLink",      x: 70, y: 170, size: 12 }
+              );
+            } else if (productType === "flyer") {
+              fields = [
+                { key: "headline", label: "Başlıq", required: true },
+                { key: "offer", label: "Kampaniya mətni" },
+                { key: "date", label: "Tarix" },
+                { key: "location", label: "Ünvan" },
+                { key: "phone", label: "Telefon" },
+                ...commonFields
+              ];
+              layers.push(
+                { type: "text", field: "headline", x: 10, y: 14, fontSize: 20, color: "#ffffff", fontWeight: "bold" },
+                { type: "text", field: "offer",    x: 10, y: 40, fontSize: 14, color: "#ffffff" },
+                { type: "qr",   field: "qrLink",   x: 80, y: 160, size: 18 }
+              );
+            } else if (productType === "booklet") {
+              fields = [
+                { key: "title", label: "Başlıq", required: true },
+                { key: "subtitle", label: "Alt başlıq" },
+                { key: "company", label: "Şirkət adı" },
+                { key: "website", label: "Website" },
+                ...commonFields
+              ];
+              layers.push(
+                { type: "text", field: "title",    x: 12, y: 22, fontSize: 22, color: "#ffffff", fontWeight: "bold" },
+                { type: "text", field: "subtitle", x: 12, y: 38, fontSize: 12, color: "#f0f0f0" },
+                { type: "qr",   field: "qrLink",   x: 80, y: 170, size: 18 }
+              );
+            } else if (productType === "poster") {
+              fields = [
+                { key: "headline", label: "Başlıq", required: true },
+                { key: "details", label: "Detallar" },
+                { key: "date", label: "Tarix" },
+                { key: "location", label: "Ünvan" },
+                ...commonFields
+              ];
+              layers.push(
+                { type: "text", field: "headline", x: 12, y: 18, fontSize: 26, color: "#ffffff", fontWeight: "bold" },
+                { type: "text", field: "details",  x: 12, y: 50, fontSize: 14, color: "#ffffff" },
+                { type: "qr",   field: "qrLink",   x: 82, y: 172, size: 18 }
+              );
+            }
+
+            return {
+              canvas,
+              tags: [STYLE, COLOR, INDUSTRY, "ai-generated"],
+              fields,
+              layers
+            };
+          }
+
+          async function main() {
+            for (const meta of PRODUCTS) {
+              for (let i = 0; i < COUNT_EACH; i++) {
+                const id = makeId(meta.productType);
+
+                const prevPath = path.join(PREV_DIR, `${id}.png`);
+                const tplPath = path.join(TPL_DIR, `${id}.json`);
+
+                const previewRaw = `${RAW_BASE}/${prevPath.replace(/\\/g, "/")}`;
+                const templateRaw = `${RAW_BASE}/${tplPath.replace(/\\/g, "/")}`;
+
+                const prompt = promptFor(meta.productType);
+
+                console.log(`Generating ${meta.productType} draft ${i+1}/${COUNT_EACH}: ${id}`);
+                let png;
+                // retry logic
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                  try {
+                    png = await openaiGeneratePng({ prompt, size: meta.imageSize });
+                    break;
+                  } catch (e) {
+                    console.error(`Attempt ${attempt} failed:`, e.message);
+                    if (attempt === 3) throw e;
+                    await sleep(1200 * attempt);
+                  }
+                }
+
+                fs.writeFileSync(prevPath, png);
+
+                const tplJson = buildDraftTemplateJson(meta.productType, previewRaw, meta);
+                fs.writeFileSync(tplPath, JSON.stringify(tplJson, null, 2));
+
+                draftsManifest.templates.push({
+                  id,
+                  name: meta.name,
+                  productType: meta.productType,
+                  size: meta.sizeMm ? { width: meta.sizeMm.w, height: meta.sizeMm.h, unit: "mm" }
+                                    : { width: meta.sizeCm.w, height: meta.sizeCm.h, unit: "cm" },
+                  tags: tplJson.tags,
+                  preview: previewRaw,
+                  templateUrl: templateRaw,
+                  createdAt: new Date().toISOString()
+                });
+
+                draftsManifest.updatedAt = new Date().toISOString();
+
+                // small pause to be gentle with rate limits
+                await sleep(500);
+              }
+            }
+
+            fs.mkdirSync(path.dirname(draftsManifestPath), { recursive: true });
+            fs.writeFileSync(draftsManifestPath, JSON.stringify(draftsManifest, null, 2));
+            console.log("Updated drafts manifest:", draftsManifestPath);
+          }
+
+          main().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
           EOF
 
       - name: Commit & push with PAT
@@ -69,10 +324,7 @@ jobs:
           git config user.email "bot@templates.ai"
 
           git add drafts
-          git commit -m "add draft templates" || echo "nothing to commit"
+          git commit -m "add AI draft templates" || echo "nothing to commit"
 
-          # Force origin to use PAT (NOT github-actions[bot])
           git remote set-url origin https://x-access-token:${REPO_PAT}@github.com/${{ github.repository }}.git
-
-          # Push to the same branch that triggered the workflow
           git push origin HEAD:${{ github.ref_name }}
